@@ -8,7 +8,7 @@ env:
   GIT_REPO_KERNEL: https://github.com/arduino/linux-qcom
   GIT_BRANCH_KERNEL: qcom-v6.16.7-unoq
   GIT_REPO_UBOOT: https://github.com/arduino/u-boot
-  DEVICE_TREE_UBOOT: qcom/qrb2210-arduino-unoq
+  DEVICE_TREE_UBOOT: qcom/qrb2210-arduino-imola
   OVERLAYS: arduino-unoq-releases
   RELEASE_DIR: debian-im
 
@@ -23,13 +23,13 @@ on:
         description: Include arduino-app-cli docker images
         type: boolean
         default: false
-  repository_dispatch:
-  workflow_call:
-    inputs:
       compile_kernel:
         description: Compile kernel and u-boot or reuse binaries from source repo
         type: boolean
         default: false
+  repository_dispatch:
+  workflow_call:
+
 
 # implicitely set all other permissions to none
 permissions:
@@ -89,7 +89,7 @@ jobs:
                 # install build-dependencies; TODO: --no-install-recommends
                 apt -y install git crossbuild-essential-arm64 make flex bison bc \
                     libdw-dev libelf-dev libssl-dev libssl-dev:arm64 dpkg-dev \
-                    debhelper-compat kmod python3 rsync coreutils mkbootimg fwupd
+                    debhelper-compat kmod python3 rsync coreutils mkbootimg fwupd xxd
                 GIT_REPO_KERNEL=${{ env.GIT_REPO_KERNEL }} GIT_BRANCH_KERNEL=${{ env.GIT_BRANCH_KERNEL }} \
                   scripts/build-linux-deb.sh \
                   kernel-configs/qcom-imsdk.config \
@@ -99,12 +99,22 @@ jobs:
                 scripts/build-u-boot-rb1.sh
               cp u-boot/rb1-boot.img .
               rm linux-image-*dbg*.deb
+              # Save the deb and u-boot images as artifact
             else
                 echo "No kernel or u-boot build requested"
                 cp precompiled/rb1-boot.img .
                 cp precompiled/linux-image-*.deb .
             fi
             echo "KERNELPACKAGE=`dpkg-deb -f linux-image-*.deb Package | cut -f2`" >> $GITHUB_OUTPUT
+
+      - name: Archive kernel/u-boot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-and-uboot
+          path: |
+            linux-image-*.deb
+            rb1-boot.img
+        if: ${{ github.event.inputs.compile_kernel == 'true' }}
 
       - name: Setup local APT repo
         run: |
