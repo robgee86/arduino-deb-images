@@ -303,6 +303,13 @@ actions:
       update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream
 
   - action: run
+    description: update systemd timesync clock
+    chroot: true
+    command: |
+      mkdir -p /var/lib/systemd/timesync
+      touch /var/lib/systemd/timesync/clock
+
+  - action: run
     description: Find partitions minimal sizes
     command: |
       set -eux
