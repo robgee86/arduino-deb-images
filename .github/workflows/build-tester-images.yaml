@@ -106,6 +106,7 @@ jobs:
                 cp precompiled/linux-image-*.deb .
             fi
             echo "KERNELPACKAGE=`dpkg-deb -f linux-image-*.deb Package | cut -f2`" >> $GITHUB_OUTPUT
+            cp rb1-boot.img precompiled/flash/boot.img
 
       - name: Archive kernel/u-boot artifacts
         uses: actions/upload-artifact@v4
