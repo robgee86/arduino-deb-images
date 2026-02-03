@@ -264,8 +264,7 @@ actions:
       sleep 10
       /usr/sbin/dockerd --containerd=/run/containerd/containerd.sock --iptables=false --bridge=none &
       sleep 20
-      export ARDUINO_APP_CLI__DATA_DIR=/home/arduino/.local/share/arduino-app-cli/ && \
-        export ARDUINO_APP_CLI__ALLOW_ROOT=true && \
+      export ARDUINO_APP_CLI__ALLOW_ROOT=true && \
         /usr/bin/arduino-app-cli system init
       rm -rf /home/arduino/.docker
 {{- end }}
