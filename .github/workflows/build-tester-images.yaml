@@ -90,11 +90,12 @@ jobs:
                 apt -y install git crossbuild-essential-arm64 make flex bison bc \
                     libdw-dev libelf-dev libssl-dev libssl-dev:arm64 dpkg-dev \
                     debhelper-compat kmod python3 rsync coreutils mkbootimg fwupd xxd
-                GIT_REPO_KERNEL=${{ env.GIT_REPO_KERNEL }} GIT_BRANCH_KERNEL=${{ env.GIT_BRANCH_KERNEL }} \
-                  scripts/build-linux-deb.sh \
+
+                scripts/build-linux-deb.py --repo=${{ env.GIT_REPO_KERNEL }} --ref=${{ env.GIT_BRANCH_KERNEL }} \
                   kernel-configs/qcom-imsdk.config \
                   kernel-configs/systemd-boot.config \
                   kernel-configs/arduino.config
+
               GIT_REPO_UBOOT=${{ env.GIT_REPO_UBOOT }} DEVICE_TREE_UBOOT=${{ env.DEVICE_TREE_UBOOT }} \
                 scripts/build-u-boot-rb1.sh
               cp u-boot/rb1-boot.img .
