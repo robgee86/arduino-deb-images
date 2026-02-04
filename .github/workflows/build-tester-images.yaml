@@ -92,15 +92,15 @@ jobs:
                     debhelper-compat kmod python3 rsync coreutils mkbootimg fwupd xxd
 
                 scripts/build-linux-deb.py --repo=${{ env.GIT_REPO_KERNEL }} --ref=${{ env.GIT_BRANCH_KERNEL }} \
-                  kernel-configs/qcom-imsdk.config \
-                  kernel-configs/systemd-boot.config \
-                  kernel-configs/arduino.config
+                    kernel-configs/qcom-imsdk.config \
+                    kernel-configs/systemd-boot.config \
+                    kernel-configs/arduino.config
 
-              GIT_REPO_UBOOT=${{ env.GIT_REPO_UBOOT }} DEVICE_TREE_UBOOT=${{ env.DEVICE_TREE_UBOOT }} \
-                scripts/build-u-boot-rb1.sh
-              cp u-boot/rb1-boot.img .
-              rm linux-image-*dbg*.deb
-              # Save the deb and u-boot images as artifact
+                GIT_REPO_UBOOT=${{ env.GIT_REPO_UBOOT }} DEVICE_TREE_UBOOT=${{ env.DEVICE_TREE_UBOOT }} \
+                    scripts/build-u-boot-rb1.sh
+                cp u-boot/rb1-boot.img .
+                rm linux-image-*dbg*.deb
+                # Save the deb and u-boot images as artifact
             else
                 echo "No kernel or u-boot build requested"
                 cp precompiled/rb1-boot.img .
@@ -148,7 +148,7 @@ jobs:
 
       - name: Build rootfs with debos
         env:
-          INCLUDE_IMAGE: ${{ github.event.inputs.release || github.event.inputs.docker-images }} 
+          INCLUDE_IMAGE: ${{ github.event.inputs.release || github.event.inputs.docker-images }}
         run: |
           set -ux
           debos \
@@ -208,7 +208,7 @@ jobs:
         run: |
           CHECKSUM=`sha256sum arduino-unoq-debian-image-${{ steps.buildtag.outputs.BUILD_ID }}.tar.zst | awk '{print $1}'`
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
-      
+
       - name: Set S3 target
         run: |
           S3_TARGET=${{ env.RELEASE_DIR }}/Unstable
@@ -229,18 +229,18 @@ jobs:
           BUILD_ID: ${{ steps.buildtag.outputs.BUILD_ID }}
           URL: https://downloads.oniudra.cc/${{ env.RELEASE_DIR }}/${{ steps.buildtag.outputs.BUILD_ID }}/arduino-unoq-debian-image-${{ steps.buildtag.outputs.BUILD_ID }}.tar.zst
           CHECKSUM: ${{ steps.calculate-checksum.outputs.checksum }}
-      
+
       - name: Unpack rootfs to generate SBOM
         run: mkdir -v rootfs && tar -C rootfs -xf rootfs.tar.gz
         if: ${{ github.event.inputs.release == 'true' }}
-            
+
       - name: Install Syft
         run: |
           set -ux
           apt -y install curl
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
         if: ${{ github.event.inputs.release == 'true' }}
-        
+
       - name: Generate SBOMs with Syft
         run: |
           set -ux
@@ -258,7 +258,7 @@ jobs:
               -v \
               scan rootfs
         if: ${{ github.event.inputs.release == 'true' }}
-                  
+
       - name: Generate license summary from Syft report
         run: |
           set -ux
@@ -266,7 +266,7 @@ jobs:
               --rootfs rootfs rootfs-sbom.syft.json |
                   tee rootfs-sbom.syft-license-summary.csv.txt
         if: ${{ github.event.inputs.release == 'true' }}
-      
+
       - name: Stage SBOMs for publishing
         run: |
           set -ux
@@ -282,7 +282,7 @@ jobs:
         run: |
           aws s3 cp arduino-unoq-debian-image-${{ env.BUILD_ID }}.tar.zst s3://${{ secrets.S3_BUCKET }}/${{ env.RELEASE_DIR }}/${{ env.BUILD_ID }}/
           aws s3 cp info.json s3://${{ secrets.S3_BUCKET }}/${{ env.RELEASE_DIR }}/info.json
-      
+
       - name: Upload sboms
         env:
           BUILD_ID: ${{ steps.buildtag.outputs.BUILD_ID }}
