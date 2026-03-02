@@ -2,8 +2,6 @@ name: SBOM Comparison (main vs arduino)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 6 * * 1'  # Weekly on Monday at 6am UTC
 
 # implicitly set all other permissions to none
 permissions:
@@ -198,8 +196,10 @@ jobs:
     needs: [build-main-sbom, build-arduino-sbom]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout scripts
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
 
       - name: Download main SBOM
         uses: actions/download-artifact@v4
