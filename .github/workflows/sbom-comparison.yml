@@ -9,11 +9,240 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sbom-comparison
+  cancel-in-progress: true
+
 jobs:
-  compare-sboms:
-    runs-on: ubuntu-latest
+  build-main-sbom:
+    name: Build main branch SBOM
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --privileged
+    env:
+      BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}-main
     steps:
+      - name: Update OS packages
+        run: |
+          set -ux
+          apt update
+          apt -y upgrade
+          apt -y full-upgrade
+
       - name: Checkout main branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
+
+      - name: Install debos and dependencies
+        run: apt -y install debos mtools
+
+      - name: Setup local APT repo
+        run: |
+          set -ux -o pipefail
+          apt -y install --no-install-recommends apt-utils
+          mkdir -p local-apt-repo
+          (
+            cd local-apt-repo
+            apt-ftparchive packages . >Packages
+            apt-ftparchive release . >Release
+          )
+
+      - name: Build rootfs with debos
+        run: |
+          set -ux
+          debos \
+              -t overlays:qsc-deb-releases \
+              -t xfcedesktop:true \
+              -t aptlocalrepo:${PWD}/local-apt-repo \
+              -t kernelpackage:'linux-image-6.16.7-qcom1++' \
+              -t "buildid:${BUILD_ID}" \
+              --print-recipe \
+              debos-recipes/qualcomm-linux-debian-rootfs.yaml
+
+      - name: Unpack rootfs for SBOM
+        run: mkdir -v rootfs && tar -C rootfs -xf rootfs.tar.gz
+
+      - name: Install Syft
+        run: |
+          set -ux
+          apt -y install curl
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
+
+      - name: Generate SPDX SBOM
+        run: |
+          set -ux
+          bin/syft --version
+          SYFT_FORMAT_PRETTY=true bin/syft \
+              -o spdx-json=main-sbom.spdx.json \
+              --parallelism $(nproc) \
+              --select-catalogers debian \
+              --source-name qualcomm-linux-debian-rootfs \
+              --source-version "${BUILD_ID}" \
+              -v \
+              scan rootfs
+
+      - name: Upload main SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-main
+          path: main-sbom.spdx.json
+
+  build-arduino-sbom:
+    name: Build arduino branch SBOM
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --privileged
+    env:
+      BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}-arduino
+      OVERLAYS: arduino-unoq-releases,apt-sources,backports,qsc-deb-releases
+    steps:
+      - name: Update OS packages
+        run: |
+          set -ux
+          apt update
+          apt -y upgrade
+          apt -y full-upgrade
+
+      - name: Checkout arduino branch
+        uses: actions/checkout@v4
+        with:
+          ref: arduino
+          fetch-depth: 0
+
+      - name: Install debos and dependencies
+        run: |
+          apt install -y debos mtools
+          # TEMPORARY: get a recent debos version until the next release
+          apt install -y git golang libglib2.0-dev libostree-dev libostree-1-1
+          git clone -b action-standalone-partitions https://github.com/facchinm/debos.git
+          cd debos && go build ./cmd/debos
+          mv debos /usr/local/bin/debos
+
+      - name: Setup kernel from precompiled
+        id: compile
+        run: |
+          set -ux
+          cp precompiled/linux-image-*.deb .
+          echo "KERNELPACKAGE=$(dpkg-deb -f linux-image-*.deb Package | cut -f2)" >> $GITHUB_OUTPUT
+
+      - name: Setup local APT repo
+        run: |
+          set -ux -o pipefail
+          apt -y install --no-install-recommends apt-utils
+          mkdir -p local-apt-repo
+          if [ -f linux-image-*.deb ]; then
+              mkdir -v local-apt-repo/linux-deb-latest
+              cp -av linux*.deb local-apt-repo/linux-deb-latest
+          fi
+          (
+            cd local-apt-repo
+            apt-ftparchive packages . >Packages
+            apt-ftparchive release . >Release
+          )
+
+      - name: Build rootfs with debos
+        run: |
+          set -ux
+          debos \
+              -t overlays:${{ env.OVERLAYS }} \
+              -t xfcedesktop:true \
+              -t aptlocalrepo:${PWD}/local-apt-repo \
+              -t kernelpackage:'${{ steps.compile.outputs.KERNELPACKAGE }}' \
+              -t "buildid:${BUILD_ID}" \
+              --print-recipe \
+              debos-recipes/qualcomm-linux-debian-rootfs.yaml
+
+      - name: Apply arduino specific overlays
+        run: |
+          set -ux
+          debos -t imagetype:sdcard \
+              -t aptlocalrepo:${PWD}/local-apt-repo \
+              -t includecontainers:false \
+              --print-recipe \
+              debos-recipes/qualcomm-linux-debian-rootfs-arduino-extra.yaml
+
+      - name: Unpack rootfs for SBOM
+        run: mkdir -v rootfs && tar -C rootfs -xf rootfs.tar.gz
+
+      - name: Install Syft
+        run: |
+          set -ux
+          apt -y install curl
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
+
+      - name: Generate SPDX SBOM
+        run: |
+          set -ux
+          bin/syft --version
+          SYFT_FORMAT_PRETTY=true bin/syft \
+              -o spdx-json=arduino-sbom.spdx.json \
+              --parallelism $(nproc) \
+              --select-catalogers debian \
+              --source-name arduino-linux-debian-rootfs \
+              --source-version "${BUILD_ID}" \
+              -v \
+              scan rootfs
+
+      - name: Upload arduino SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-arduino
+          path: arduino-sbom.spdx.json
+
+  compare-sboms:
+    name: Generate delta SBOM
+    needs: [build-main-sbom, build-arduino-sbom]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          ref: arduino
+          sparse-checkout: scripts
+
+      - name: Download main SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-main
+          path: sbom-main
+
+      - name: Download arduino SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-arduino
+          path: sbom-arduino
+
+      - name: Generate delta SBOM (JSON)
+        run: |
+          python3 scripts/sbom-delta.py \
+              sbom-main/main-sbom.spdx.json \
+              sbom-arduino/arduino-sbom.spdx.json \
+              > delta-sbom.json
+
+      - name: Generate delta SBOM (CSV)
+        run: |
+          python3 scripts/sbom-delta.py \
+              --format csv \
+              sbom-main/main-sbom.spdx.json \
+              sbom-arduino/arduino-sbom.spdx.json \
+              > delta-sbom.csv
+
+      - name: Write summary
+        run: |
+          python3 scripts/sbom-delta.py \
+              --format markdown \
+              sbom-main/main-sbom.spdx.json \
+              sbom-arduino/arduino-sbom.spdx.json \
+              >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload delta SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-delta
+          path: |
+            delta-sbom.json
+            delta-sbom.csv
