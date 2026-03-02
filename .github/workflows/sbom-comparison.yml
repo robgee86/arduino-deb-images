@@ -198,11 +198,10 @@ jobs:
     needs: [build-main-sbom, build-arduino-sbom]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout scripts
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: arduino
-          sparse-checkout: scripts
 
       - name: Download main SBOM
         uses: actions/download-artifact@v4
